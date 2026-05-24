@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Academic Conference Scholar Discovery</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Local research workflow</p>
+          <h1>Academic Conference Scholar Discovery</h1>
+        </div>
+        <div class="status-pill" id="appStatus">Stage 4 ready</div>
+      </header>
+
+      <section class="workflow-band">
+        <ol class="steps" aria-label="Workflow stages">
+          <li class="step is-active" data-step="upload">
+            <span>1</span>
+            Upload PDFs
+          </li>
+          <li class="step" data-step="extract">
+            <span>2</span>
+            Review citations
+          </li>
+          <li class="step" data-step="rank">
+            <span>3</span>
+            Rank scholars
+          </li>
+          <li class="step" data-step="invite">
+            <span>4</span>
+            Draft invites
+          </li>
+        </ol>
+      </section>
+
+      <section class="workspace">
+        <aside class="control-panel">
+          <div class="upload-zone" id="dropZone">
+            <input id="pdfInput" type="file" accept="application/pdf,.pdf" multiple />
+            <input
+              id="folderInput"
+              type="file"
+              accept="application/pdf,.pdf"
+              webkitdirectory
+              directory
+              multiple
+            />
+            <div class="upload-icon" aria-hidden="true">PDF</div>
+            <h2>Upload a conference PDF folder</h2>
+            <p>Drop files here, choose PDFs, or upload a folder. Analyze will extract citations automatically.</p>
+            <div class="upload-actions">
+              <button class="primary-action" id="chooseFilesButton" type="button">Choose PDFs</button>
+              <button class="secondary-action" id="chooseFolderButton" type="button">Choose Folder</button>
+            </div>
+          </div>
+
+          <div class="file-summary">
+            <div>
+              <span class="metric" id="fileCount">0</span>
+              <span class="metric-label">PDFs selected</span>
+            </div>
+            <div>
+              <span class="metric" id="citationCount">0</span>
+              <span class="metric-label">cited authors</span>
+            </div>
+          </div>
+
+          <div class="field-keyword-wrap">
+            <label for="fieldKeywordsInput">Field keywords</label>
+            <input
+              id="fieldKeywordsInput"
+              type="text"
+              placeholder="e.g. hypertension, blood pressure, cardiology"
+            />
+            <p>Optional. These keywords are used after you confirm authors and search scholars.</p>
+          </div>
+
+          <details class="author-input-wrap">
+            <summary>Extracted cited authors</summary>
+            <textarea
+              id="citedAuthorsInput"
+              rows="6"
+              placeholder="After Analyze, extracted cited_author names will appear here."
+            ></textarea>
+            <p>This box is for review/debugging. The normal workflow extracts these names from PDFs automatically.</p>
+          </details>
+
+          <div class="file-list-wrap">
+            <h2>Selected PDFs</h2>
+            <ul class="file-list" id="fileList">
+              <li class="empty-state">No PDFs selected yet.</li>
+            </ul>
+          </div>
+
+          <button class="analyze-button" id="analyzeButton" type="button" disabled>Analyze</button>
+          <button class="analyze-button secondary-analyze" id="searchConfirmedButton" type="button" disabled>
+            Search confirmed scholars
+          </button>
+        </aside>
+
+        <section class="results-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Manual review</p>
+              <h2>Author-article list</h2>
+            </div>
+            <div class="toolbar">
+              <button class="secondary-action" id="selectAllAuthorsButton" type="button" disabled>Select all</button>
+              <button class="secondary-action" id="clearAllAuthorsButton" type="button" disabled>Clear all</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Confirm</th>
+                  <th>Author</th>
+                  <th>Article</th>
+                  <th>Source PDF</th>
+                </tr>
+              </thead>
+              <tbody id="authorArticleRows">
+                <tr>
+                  <td colspan="4" class="empty-table">Analyze PDFs to create an author-article review list.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="results-panel scholar-results-panel">
+        <div class="panel-heading">
+          <div>
+              <p class="eyebrow">Confirmed search output</p>
+            <h2>Scholar list</h2>
+          </div>
+          <div class="toolbar">
+            <label for="sortSelect">Sort by</label>
+            <select id="sortSelect">
+              <option value="score">Overall fit</option>
+              <option value="citations">Citation count</option>
+              <option value="institution">Institution</option>
+              <option value="works">Works count</option>
+              <option value="topicMatch">Topic match</option>
+              <option value="field">Concept / field</option>
+            </select>
+            <button class="secondary-action" id="copyButton" type="button" disabled>Copy list</button>
+            <button class="secondary-action" id="csvButton" type="button" disabled>Download CSV</button>
+          </div>
+        </div>
+
+        <div class="progress-log" id="progressLog">
+          Upload PDFs and click Analyze to begin.
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Shortlist</th>
+                <th>Scholar</th>
+                <th>Extracted citation</th>
+                <th>Institution</th>
+                <th>Works</th>
+                <th>Cited by</th>
+                <th>Topic match</th>
+                <th>Concept / field</th>
+                <th>OpenAlex</th>
+              </tr>
+            </thead>
+            <tbody id="scholarRows">
+              <tr>
+                <td colspan="9" class="empty-table">Search confirmed scholars to populate this list.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="reference-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Citation extraction evidence</p>
+            <h2>Reference section images</h2>
+          </div>
+        </div>
+        <div class="reference-grid" id="referenceImageGrid">
+          <div class="empty-email">After Analyze, extracted References / Bibliography / Works Cited images will appear here.</div>
+        </div>
+      </section>
+
+      <section class="email-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Shortlist</p>
+            <h2>Personalized invitation emails</h2>
+          </div>
+          <button class="secondary-action" id="copyEmailsButton" type="button" disabled>Copy emails</button>
+        </div>
+        <div class="email-grid" id="emailGrid">
+          <div class="empty-email">Select scholars from the ranked list to generate invitation drafts.</div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
