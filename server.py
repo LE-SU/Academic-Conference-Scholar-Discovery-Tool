@@ -43,7 +43,16 @@ class ScholarDiscoveryHandler(SimpleHTTPRequestHandler):
         if not self.is_authorized():
             self.request_password()
             return
+        if self.path == "/":
+            self.send_response(302)
+            self.send_header("Location", "/app/index.html")
+            self.end_headers()
+            return
         super().do_GET()
+
+    def list_directory(self, path):
+        self.send_error(403, "Directory listing is disabled.")
+        return None
 
     def do_POST(self):
         if not self.is_authorized():
