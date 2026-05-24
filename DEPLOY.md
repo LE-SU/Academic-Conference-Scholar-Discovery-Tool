@@ -10,6 +10,12 @@ Set this variable on the hosting platform:
 APP_PASSWORD=choose-a-test-password
 ```
 
+Also set Python to 3.11 if your platform does not read `.python-version`:
+
+```text
+PYTHON_VERSION=3.11.11
+```
+
 When visitors open the site, the browser will ask for a username and password.
 The username can be anything; the password must match `APP_PASSWORD`.
 
