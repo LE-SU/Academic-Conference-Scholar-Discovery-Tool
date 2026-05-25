@@ -416,7 +416,7 @@ function renderHighlightsForImage(imageUrl) {
 function renderScholars() {
   if (state.scholars.length === 0) {
     elements.scholarRows.innerHTML =
-      '<tr><td colspan="9" class="empty-table">Search confirmed scholars to populate this list.</td></tr>';
+      '<tr><td colspan="11" class="empty-table">Search confirmed scholars to populate this list.</td></tr>';
     elements.copyButton.disabled = true;
     elements.csvButton.disabled = true;
     return;
@@ -437,6 +437,8 @@ function renderScholars() {
           <td>${scholar.citedByCount.toLocaleString()}</td>
           <td><span class="topic-chip">${scholar.topicMatch}%</span></td>
           <td><span class="topic-chip">${escapeHtml(scholar.field)}</span>${renderMatchedKeywords(scholar)}</td>
+          <td><a class="profile-link" href="${escapeHtml(scholar.googleScholarUrl)}" target="_blank" rel="noreferrer">Search</a></td>
+          <td>${escapeHtml(scholar.email || "Not found")}</td>
           <td><a class="profile-link" href="${escapeHtml(scholar.profileUrl)}" target="_blank" rel="noreferrer">Profile</a></td>
         </tr>
       `;
@@ -524,7 +526,7 @@ Best regards,`;
 function copyScholarList() {
   const text = getSortedScholars()
     .map((scholar, index) => {
-      return `${index + 1}. ${scholar.name} | ${scholar.institution} | ${scholar.worksCount} works | ${scholar.citedByCount} cited by | ${scholar.topicMatch}% topic match | ${scholar.field} | ${scholar.profileUrl}`;
+      return `${index + 1}. ${scholar.name} | ${scholar.institution} | ${scholar.worksCount} works | ${scholar.citedByCount} cited by | ${scholar.topicMatch}% topic match | ${scholar.field} | email: ${scholar.email || "Not found"} | Google Scholar: ${scholar.googleScholarUrl} | OpenAlex: ${scholar.profileUrl}`;
     })
     .join("\n");
   copyText(text, "Scholar list copied.");
@@ -556,6 +558,8 @@ function downloadCsv() {
       "topic_match",
       "matched_keywords",
       "concept_field",
+      "google_scholar_url",
+      "email",
       "openalex_profile_url",
     ],
     ...getSortedScholars().map((scholar, index) => [
@@ -568,6 +572,8 @@ function downloadCsv() {
       scholar.topicMatch,
       scholar.matchedKeywords.join("; "),
       scholar.field,
+      scholar.googleScholarUrl,
+      scholar.email || "Not found",
       scholar.profileUrl,
     ]),
   ];
@@ -673,9 +679,31 @@ function mapOpenAlexAuthor(author, citedAuthor) {
     citedByCount: author.cited_by_count || 0,
     field: fields[0] || "Unknown field",
     fields,
+    googleScholarUrl: buildGoogleScholarUrl(author.display_name || citedAuthor, getInstitution(author)),
+    email: getEmail(author),
     profileUrl: getProfileUrl(author),
     openAlexId: author.id || "",
   };
+}
+
+function buildGoogleScholarUrl(name, institution) {
+  const query = [name, institution === "Unknown institution" ? "" : institution].filter(Boolean).join(" ");
+  const params = new URLSearchParams({
+    view_op: "search_authors",
+    mauthors: query,
+    hl: "en",
+  });
+  return `https://scholar.google.com/citations?${params.toString()}`;
+}
+
+function getEmail(author) {
+  const candidates = [
+    author.email,
+    author.email_address,
+    author.contact_email,
+    author.ids?.email,
+  ].filter(Boolean);
+  return candidates[0] || "";
 }
 
 function getInstitution(author) {

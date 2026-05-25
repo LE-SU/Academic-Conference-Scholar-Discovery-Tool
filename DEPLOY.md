@@ -41,5 +41,10 @@ pip install -r requirements.txt
 
 - Uploaded PDFs are processed on the server.
 - Generated reference-section images are written under `generated/`.
+- Google Scholar does not provide an official public API. The app currently
+  creates Google Scholar author-search links for each candidate instead of
+  scraping Google Scholar profile pages.
+- Email is shown only when available from public structured metadata. Most
+  OpenAlex author records do not include email.
 - For a short test, this is fine. For production, add automatic cleanup,
   stricter upload limits, and a real login system.
