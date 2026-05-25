@@ -16,6 +16,8 @@ const OPENALEX_AUTHOR_ENDPOINT = "https://api.openalex.org/authors";
 const OPENALEX_RESULTS_PER_AUTHOR = 5;
 const OPENALEX_REQUEST_DELAY_MS = 350;
 const CITATION_EXTRACTION_ENDPOINT = "/api/extract-citations";
+const GOOGLE_SCHOLAR_PROFILE_ENDPOINT = "/api/google-scholar-profile";
+const GOOGLE_SCHOLAR_REQUEST_DELAY_MS = 450;
 
 const elements = {
   pdfInput: document.querySelector("#pdfInput"),
@@ -270,6 +272,8 @@ async function searchConfirmedScholars() {
     score: buildCandidateScore(scholar),
   }));
 
+  await enrichScholarsWithGoogleScholarProfiles();
+
   setWorkflowStep("rank");
   if (state.scholars.length > 0) {
     elements.appStatus.textContent = "Ranked list ready";
@@ -282,6 +286,54 @@ async function searchConfirmedScholars() {
   elements.searchConfirmedButton.disabled = state.confirmedAuthorIds.size === 0;
   elements.progressLog.textContent = buildOpenAlexSummary(confirmedAuthors.length);
   renderScholars();
+}
+
+async function enrichScholarsWithGoogleScholarProfiles() {
+  if (state.scholars.length === 0) return;
+
+  for (const [index, scholar] of state.scholars.entries()) {
+    elements.progressLog.textContent = `Finding Google Scholar profile ${index + 1}/${state.scholars.length}: ${scholar.name}`;
+    try {
+      const profile = await fetchGoogleScholarProfile(scholar);
+      state.scholars[index] = {
+        ...state.scholars[index],
+        googleScholarUrl: profile.google_scholar_url || state.scholars[index].googleScholarUrl,
+        googleScholarAuthorId: profile.google_scholar_author_id || "",
+        googleScholarInterests: profile.interests || [],
+        googleScholarCitedBy: profile.cited_by || "",
+        email: profile.email || state.scholars[index].email || "",
+        googleScholarError: profile.error || "",
+      };
+    } catch (error) {
+      state.scholars[index] = {
+        ...state.scholars[index],
+        googleScholarError: error.message,
+      };
+      state.searchErrors.push(`${scholar.name} Google Scholar: ${error.message}`);
+    }
+    renderScholars();
+    if (index < state.scholars.length - 1) {
+      await sleep(GOOGLE_SCHOLAR_REQUEST_DELAY_MS);
+    }
+  }
+}
+
+async function fetchGoogleScholarProfile(scholar) {
+  const response = await fetch(GOOGLE_SCHOLAR_PROFILE_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: scholar.name,
+      institution: scholar.institution,
+      citedAuthor: scholar.citedAuthor,
+      fields: scholar.fields || [],
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || `Google Scholar lookup returned HTTP ${response.status}`);
+  }
+  return payload;
 }
 
 async function extractCitedAuthorsFromPdfs() {
@@ -437,7 +489,7 @@ function renderScholars() {
           <td>${scholar.citedByCount.toLocaleString()}</td>
           <td><span class="topic-chip">${scholar.topicMatch}%</span></td>
           <td><span class="topic-chip">${escapeHtml(scholar.field)}</span>${renderMatchedKeywords(scholar)}</td>
-          <td><a class="profile-link" href="${escapeHtml(scholar.googleScholarUrl)}" target="_blank" rel="noreferrer">Search</a></td>
+          <td>${renderGoogleScholarProfileCell(scholar)}</td>
           <td>${escapeHtml(scholar.email || "Not found")}</td>
           <td><a class="profile-link" href="${escapeHtml(scholar.profileUrl)}" target="_blank" rel="noreferrer">Profile</a></td>
         </tr>
@@ -469,6 +521,12 @@ function renderScholars() {
       document.querySelector(".reference-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
+}
+
+function renderGoogleScholarProfileCell(scholar) {
+  const label = scholar.googleScholarAuthorId ? "Profile" : "Search";
+  const note = scholar.googleScholarError ? `<span class="file-path">${escapeHtml(scholar.googleScholarError)}</span>` : "";
+  return `<a class="profile-link" href="${escapeHtml(scholar.googleScholarUrl)}" target="_blank" rel="noreferrer">${label}</a>${note}`;
 }
 
 function getSortedScholars() {
@@ -559,6 +617,9 @@ function downloadCsv() {
       "matched_keywords",
       "concept_field",
       "google_scholar_url",
+      "google_scholar_author_id",
+      "google_scholar_cited_by",
+      "google_scholar_interests",
       "email",
       "openalex_profile_url",
     ],
@@ -573,6 +634,9 @@ function downloadCsv() {
       scholar.matchedKeywords.join("; "),
       scholar.field,
       scholar.googleScholarUrl,
+      scholar.googleScholarAuthorId || "",
+      scholar.googleScholarCitedBy || "",
+      (scholar.googleScholarInterests || []).join("; "),
       scholar.email || "Not found",
       scholar.profileUrl,
     ]),

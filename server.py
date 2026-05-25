@@ -7,6 +7,9 @@ import json
 import os
 import re
 import sys
+import urllib.parse
+import urllib.request
+import urllib.error
 import uuid
 
 ROOT = Path(__file__).resolve().parent
@@ -33,6 +36,7 @@ MAX_REFERENCE_IMAGE_PAGES = 6
 REFERENCE_IMAGE_DIR = ROOT / "generated" / "reference_sections"
 REFERENCE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "")
 
 
 class ScholarDiscoveryHandler(SimpleHTTPRequestHandler):
@@ -61,7 +65,35 @@ class ScholarDiscoveryHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/extract-citations":
             self.extract_citations()
             return
+        if self.path == "/api/google-scholar-profile":
+            self.google_scholar_profile()
+            return
         self.send_error(404, "Unknown endpoint")
+
+    def google_scholar_profile(self):
+        if not SERPAPI_KEY:
+            self.write_json({"error": "SERPAPI_KEY is not configured."}, status=503)
+            return
+
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception:
+            self.write_json({"error": "Expected JSON body."}, status=400)
+            return
+
+        name = clean_line(payload.get("name", ""))
+        institution = clean_line(payload.get("institution", ""))
+        if not name:
+            self.write_json({"error": "Missing scholar name."}, status=400)
+            return
+
+        try:
+            result = find_google_scholar_profile(name, institution)
+        except Exception as exc:
+            self.write_json({"error": str(exc)}, status=502)
+            return
+        self.write_json(result)
 
     def is_authorized(self):
         if not APP_PASSWORD:
@@ -289,6 +321,147 @@ def extract_reference_blocks_from_page(page, clip):
 def safe_filename(value):
     value = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-")
     return value[:80] or "pdf"
+
+
+def find_google_scholar_profile(name, institution):
+    profiles = search_google_for_scholar_profiles(name, institution)
+    if not profiles:
+        return {
+            "google_scholar_url": "",
+            "google_scholar_author_id": "",
+            "email": "",
+            "interests": [],
+            "cited_by": "",
+            "source": "serpapi",
+            "error": "No Google Scholar profile found.",
+        }
+
+    best_profile = choose_best_scholar_profile(name, institution, profiles)
+    author_id = best_profile.get("author_id") or extract_scholar_author_id(best_profile.get("link", ""))
+    details = {}
+    if author_id:
+        details_payload = serpapi_request(
+            {
+                "engine": "google_scholar_author",
+                "author_id": author_id,
+                "hl": "en",
+            }
+        )
+        details = details_payload.get("author") or {}
+
+    profile_url = (
+        best_profile.get("link")
+        or details.get("link")
+        or (f"https://scholar.google.com/citations?user={author_id}&hl=en" if author_id else "")
+    )
+    return {
+        "google_scholar_url": profile_url,
+        "google_scholar_author_id": author_id,
+        "email": details.get("email") or best_profile.get("email") or "",
+        "interests": extract_interest_titles(details.get("interests") or best_profile.get("interests") or []),
+        "cited_by": details.get("cited_by", {}).get("table", [{}])[0].get("citations", {}).get("all", "")
+        if isinstance(details.get("cited_by"), dict)
+        else best_profile.get("cited_by", ""),
+        "source": "serpapi",
+    }
+
+
+def search_google_for_scholar_profiles(name, institution):
+    query_parts = [
+        "site:scholar.google.com/citations",
+        f'"{name}"',
+    ]
+    if institution and institution != "Unknown institution":
+        query_parts.append(f'"{institution}"')
+    query_parts.append('"Google Scholar"')
+
+    payload = serpapi_request(
+        {
+            "engine": "google",
+            "q": " ".join(query_parts),
+            "num": "5",
+            "hl": "en",
+        }
+    )
+    profiles = []
+    for result in payload.get("organic_results", []):
+        link = result.get("link", "")
+        author_id = extract_scholar_author_id(link)
+        if not author_id:
+            continue
+        profiles.append(
+            {
+                "name": result.get("title", "").replace(" - Google Scholar", "").strip(),
+                "affiliations": result.get("snippet", ""),
+                "link": f"https://scholar.google.com/citations?user={author_id}&hl=en",
+                "author_id": author_id,
+                "email": "",
+                "cited_by": "",
+                "interests": [],
+            }
+        )
+    return profiles
+
+
+def serpapi_request(params):
+    params = {**params, "api_key": SERPAPI_KEY}
+    url = "https://serpapi.com/search.json?" + urllib.parse.urlencode(params)
+    request = urllib.request.Request(url, headers={"User-Agent": "ScholarDiscoveryTool/0.1"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(body)
+            message = payload.get("error") or payload.get("message") or body
+        except Exception:
+            message = body or str(exc)
+        raise RuntimeError(f"SerpAPI HTTP {exc.code}: {message}") from exc
+    if payload.get("error"):
+        raise RuntimeError(payload["error"])
+    return payload
+
+
+def choose_best_scholar_profile(name, institution, profiles):
+    normalized_name = normalize_text(name)
+    normalized_institution = normalize_text(institution)
+
+    def score(profile):
+        profile_name = normalize_text(profile.get("name", ""))
+        affiliations = normalize_text(profile.get("affiliations", ""))
+        score_value = 0
+        if profile_name == normalized_name:
+            score_value += 100
+        elif normalized_name in profile_name or profile_name in normalized_name:
+            score_value += 60
+        else:
+            score_value += len(set(normalized_name.split()) & set(profile_name.split())) * 12
+        if normalized_institution and normalized_institution != "unknown institution":
+            score_value += len(set(normalized_institution.split()) & set(affiliations.split())) * 8
+        return score_value
+
+    return max(profiles, key=score)
+
+
+def normalize_text(value):
+    return re.sub(r"\s+", " ", value.lower()).strip()
+
+
+def extract_scholar_author_id(url):
+    parsed = urllib.parse.urlparse(url)
+    query = urllib.parse.parse_qs(parsed.query)
+    return (query.get("user") or [""])[0]
+
+
+def extract_interest_titles(interests):
+    titles = []
+    for interest in interests:
+        if isinstance(interest, dict) and interest.get("title"):
+            titles.append(interest["title"])
+        elif isinstance(interest, str):
+            titles.append(interest)
+    return titles
 
 
 def build_citation_highlights(pdf_path, image_records, cited_authors):

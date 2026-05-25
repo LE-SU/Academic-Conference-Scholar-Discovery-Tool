@@ -10,6 +10,12 @@ Set this variable on the hosting platform:
 APP_PASSWORD=choose-a-test-password
 ```
 
+For Google Scholar profile lookup, also set:
+
+```text
+SERPAPI_KEY=your-serpapi-key
+```
+
 Also set Python to 3.11 if your platform does not read `.python-version`:
 
 ```text
@@ -41,9 +47,10 @@ pip install -r requirements.txt
 
 - Uploaded PDFs are processed on the server.
 - Generated reference-section images are written under `generated/`.
-- Google Scholar does not provide an official public API. The app currently
-  creates Google Scholar author-search links for each candidate instead of
-  scraping Google Scholar profile pages.
+- Google Scholar does not provide an official public API. The app uses SerpAPI
+  when `SERPAPI_KEY` is configured: first a Google search restricted to
+  `scholar.google.com/citations`, then the SerpAPI Google Scholar Author API
+  when an author id is found.
 - Email is shown only when available from public structured metadata. Most
   OpenAlex author records do not include email.
 - For a short test, this is fine. For production, add automatic cleanup,
